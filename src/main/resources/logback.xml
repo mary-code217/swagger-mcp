@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Logback 내부 상태 메시지 비활성화 -->
+<configuration debug="false">
+    <statusListener class="ch.qos.logback.core.status.NopStatusListener" />
+
+    <!--
+        SwaggerMCP 로깅 설정
+
+        MCP는 stdout을 통신에 사용하므로 로그는 파일로만 출력합니다.
+    -->
+
+    <!-- 파일 로깅 -->
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <file>${user.home}/swaggermcp.log</file>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 기본 로그 레벨 -->
+    <root level="INFO">
+        <appender-ref ref="FILE" />
+    </root>
+
+    <!-- Swagger Parser 로그 레벨 조정 -->
+    <logger name="io.swagger" level="WARN" />
+    <logger name="org.apache" level="WARN" />
+</configuration>
