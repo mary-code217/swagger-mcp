@@ -154,11 +154,14 @@ claude mcp add --transport stdio swagger-api -- docker run -i --rm ghcr.io/mary-
 
 ### 옵션 B: JAR 직접 실행
 
-[Releases](../../releases) 페이지에서 JAR 다운로드 후:
+Java 17 이상이 설치되어 있으면 JAR로 직접 실행할 수 있습니다.
 
 ```bash
-# CLI로 추가
-claude mcp add --transport stdio swagger-api -- java -jar /path/to/swagger-mcp.jar http://your-api/v3/api-docs
+# 1. JAR 다운로드
+curl -L -o swagger-mcp.jar https://github.com/mary-code217/swagger-mcp/releases/download/v1.0.0/swagger-mcp.jar
+
+# 2. MCP 추가
+claude mcp add --scope user --transport stdio swagger-api -- java -jar ./swagger-mcp.jar http://your-api/v3/api-docs
 ```
 
 또는 설정 파일:
