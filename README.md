@@ -159,6 +159,16 @@ http://host.docker.internal:8080/v3/api-docs
 ]
 ```
 
+### Q: 새 버전으로 업데이트하고 싶어요
+
+Docker 이미지는 자동으로 업데이트되지 않습니다. 새 버전이 나오면 직접 pull 해주세요:
+
+```bash
+docker pull ghcr.io/mary-code217/swagger-mcp:latest
+```
+
+pull 후 Claude Code를 재시작하면 새 버전이 적용됩니다.
+
 ---
 
 ## 지원하는 API 스펙
