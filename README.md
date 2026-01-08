@@ -8,17 +8,19 @@ Claude Code에서 Swagger API를 바로 사용할 수 있게 해주는 MCP 서�
 
 ## 빠른 시작
 
-### 1단계: Docker 설치 확인
+### 방법 1: CLI로 추가 (권장)
 
 ```bash
-docker --version
+# Docker 사용 (Java 설치 불필요)
+claude mcp add --transport stdio swagger-api -- docker run -i --rm ghcr.io/mary-code217/swagger-mcp:latest http://your-api/v3/api-docs
+
+# 또는 JAR 직접 실행 (Java 17+ 필요)
+claude mcp add --transport stdio swagger-api -- java -jar /path/to/swagger-mcp.jar http://your-api/v3/api-docs
 ```
 
-Docker가 없다면 [Docker Desktop](https://www.docker.com/products/docker-desktop/) 설치
+### 방법 2: 설정 파일 직접 수정
 
-### 2단계: Claude Code 설정
-
-`C:\Users\{사용자명}\.claude.json` 파일을 열고 `mcpServers`에 추가:
+`C:\Users\{사용자명}\.claude.json` 파일의 `mcpServers`에 추가:
 
 ```json
 {
@@ -36,11 +38,37 @@ Docker가 없다면 [Docker Desktop](https://www.docker.com/products/docker-desk
 }
 ```
 
-> `http://your-api-server/v3/api-docs` 부분을 실제 Swagger 주소로 변경하세요.
+### 설정 후
 
-### 3단계: Claude Code 재시작
+Claude Code를 재시작하면 바로 사용 가능!
 
-설정 후 Claude Code를 재시작하면 바로 사용 가능!
+---
+
+## MCP 관리 명령어
+
+```bash
+# MCP 서버 목록 확인
+claude mcp list
+
+# MCP 서버 제거
+claude mcp remove swagger-api
+
+# MCP 서버 정보 확인
+claude mcp get swagger-api
+```
+
+### Scope 옵션
+
+```bash
+# 현재 프로젝트만 (기본값)
+claude mcp add --scope local ...
+
+# 프로젝트 공유 (.mcp.json 생성, git으로 공유 가능)
+claude mcp add --scope project ...
+
+# 전역 (모든 프로젝트에서 사용)
+claude mcp add --scope user ...
+```
 
 ---
 
@@ -101,6 +129,13 @@ Docker가 없다면 [Docker Desktop](https://www.docker.com/products/docker-desk
 
 Java 설치 없이 Docker만 있으면 됩니다.
 
+```bash
+# CLI로 추가
+claude mcp add --transport stdio swagger-api -- docker run -i --rm ghcr.io/mary-code217/swagger-mcp:latest http://your-api/v3/api-docs
+```
+
+또는 설정 파일:
+
 ```json
 {
   "mcpServers": {
@@ -120,6 +155,13 @@ Java 설치 없이 Docker만 있으면 됩니다.
 ### 옵션 B: JAR 직접 실행
 
 [Releases](../../releases) 페이지에서 JAR 다운로드 후:
+
+```bash
+# CLI로 추가
+claude mcp add --transport stdio swagger-api -- java -jar /path/to/swagger-mcp.jar http://your-api/v3/api-docs
+```
+
+또는 설정 파일:
 
 ```json
 {
@@ -145,13 +187,13 @@ Java 설치 없이 Docker만 있으면 됩니다.
 
 ### Q: Tool이 안 보여요
 1. Claude Code 재시작
-2. `.claude.json` 경로 확인 (`C:\Users\{사용자명}\.claude.json`)
+2. `claude mcp list`로 서버가 추가되었는지 확인
 3. Swagger URL이 접속 가능한지 확인
 
 ### Q: localhost API를 사용하고 싶어요
 Docker 사용 시 `localhost` 대신 `host.docker.internal` 사용:
 ```
-"http://host.docker.internal:8080/v3/api-docs"
+http://host.docker.internal:8080/v3/api-docs
 ```
 
 ### Q: API 호출이 실패해요
