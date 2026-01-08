@@ -2,7 +2,6 @@ package com.hoho.swaggermcp.swagger;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.hoho.swaggermcp.http.HttpApiClient;
 import com.hoho.swaggermcp.mcp.McpModels;
 import com.hoho.swaggermcp.mcp.ToolProvider;
 import org.slf4j.Logger;
@@ -14,106 +13,128 @@ import java.util.stream.Collectors;
 /**
  * Swagger 스펙을 기반으로 MCP Tool을 동적으로 생성하는 클래스
  *
- * 대규모 API를 위해 계층적 탐색 + 검색 방식을 지원합니다.
+ * 멀티 API를 지원합니다.
  *
  * 제공되는 Tool:
- * 1. list_api_categories - API 카테고리(태그) 목록 조회
- * 2. list_api_endpoints - 특정 카테고리의 엔드포인트 목록 조회
- * 3. search_api - 키워드로 API 검색
- * 4. call_api - operationId로 API 직접 호출
+ * 1. list_registered_apis - 등록된 API 목록 조회
+ * 2. list_api_categories - API 카테고리(태그) 목록 조회
+ * 3. list_api_endpoints - 특정 카테고리의 엔드포인트 목록 조회
+ * 4. search_api - 키워드로 API 검색
+ * 5. call_api - operationId로 API 직접 호출
  */
 public class SwaggerToolProvider implements ToolProvider {
 
     private static final Logger logger = LoggerFactory.getLogger(SwaggerToolProvider.class);
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
-    private final String specUrl;
-    private final String baseUrlOverride;
+    private final Map<String, String> apiConfigs;
+    private final Map<String, ApiInstance> apiInstances = new LinkedHashMap<>();
 
-    private final List<ApiEndpoint> endpoints = new ArrayList<>();
-    private final Map<String, List<ApiEndpoint>> endpointsByTag = new LinkedHashMap<>();
-    private HttpApiClient httpClient;
-    private String actualBaseUrl;
-    private String apiTitle;
-    private String apiVersion;
-
-    public SwaggerToolProvider(String specUrl, String baseUrlOverride) {
-        this.specUrl = specUrl;
-        this.baseUrlOverride = baseUrlOverride;
+    public SwaggerToolProvider(Map<String, String> apiConfigs) {
+        this.apiConfigs = apiConfigs;
     }
 
     /**
-     * 초기화: Swagger 스펙 파싱 및 Tool 생성
+     * 초기화: 모든 API의 Swagger 스펙 파싱
      */
     public void initialize() {
         logger.info("SwaggerToolProvider 초기화 시작");
 
-        // Swagger 스펙 파싱
-        SwaggerParser parser = new SwaggerParser(specUrl);
-        endpoints.addAll(parser.parse());
+        for (Map.Entry<String, String> entry : apiConfigs.entrySet()) {
+            String name = entry.getKey();
+            String url = entry.getValue();
 
-        // API 정보 저장
-        apiTitle = parser.getApiTitle();
-        apiVersion = parser.getApiVersion();
-
-        // Base URL 결정
-        actualBaseUrl = baseUrlOverride != null ? baseUrlOverride : parser.getBaseUrl();
-        logger.info("API Base URL: {}", actualBaseUrl);
-
-        // HTTP 클라이언트 생성
-        httpClient = new HttpApiClient(actualBaseUrl);
-
-        // 태그별로 엔드포인트 그룹화
-        for (ApiEndpoint endpoint : endpoints) {
-            List<String> tags = endpoint.getTags();
-            if (tags == null || tags.isEmpty()) {
-                tags = Collections.singletonList("default");
-            }
-            for (String tag : tags) {
-                endpointsByTag.computeIfAbsent(tag, k -> new ArrayList<>()).add(endpoint);
+            try {
+                logger.info("API 초기화 중: {} ({})", name, url);
+                ApiInstance instance = new ApiInstance(name, url);
+                instance.initialize();
+                apiInstances.put(name, instance);
+                logger.info("API 초기화 완료: {} - {}개 엔드포인트, {}개 카테고리",
+                    name, instance.getEndpointCount(), instance.getCategoryCount());
+            } catch (Exception e) {
+                logger.error("API 초기화 실패: {} - {}", name, e.getMessage());
             }
         }
 
-        logger.info("총 {}개의 엔드포인트, {}개의 카테고리 파싱 완료", endpoints.size(), endpointsByTag.size());
+        logger.info("총 {}개의 API 초기화 완료", apiInstances.size());
     }
 
     @Override
     public List<McpModels.Tool> getTools() {
         List<McpModels.Tool> tools = new ArrayList<>();
 
-        // 1. list_api_categories
+        // 1. list_registered_apis (멀티 API일 때만 추가)
+        if (apiInstances.size() > 1) {
+            tools.add(createListRegisteredApisToolDef());
+        }
+
+        // 2. list_api_categories
         tools.add(createListCategoriesToolDef());
 
-        // 2. list_api_endpoints
+        // 3. list_api_endpoints
         tools.add(createListEndpointsToolDef());
 
-        // 3. search_api
+        // 4. search_api
         tools.add(createSearchApiToolDef());
 
-        // 4. call_api
+        // 5. call_api
         tools.add(createCallApiToolDef());
 
         return tools;
     }
 
-    private McpModels.Tool createListCategoriesToolDef() {
-        String description = String.format(
-            "List all API categories (tags) available in %s (v%s).\n" +
-            "Returns category names with endpoint counts.\n" +
-            "Use this first to explore the API structure.",
-            apiTitle != null ? apiTitle : "this API",
-            apiVersion != null ? apiVersion : "?"
+    private McpModels.Tool createListRegisteredApisToolDef() {
+        return new McpModels.Tool(
+            "list_registered_apis",
+            "List all registered API servers.\n" +
+            "Use this to see available APIs when multiple APIs are configured.\n" +
+            "Returns API names, URLs, and endpoint counts.",
+            new McpModels.InputSchema(Collections.emptyMap(), null)
         );
+    }
+
+    private McpModels.Tool createListCategoriesToolDef() {
+        Map<String, McpModels.PropertySchema> properties = new LinkedHashMap<>();
+
+        if (apiInstances.size() > 1) {
+            properties.put("api", new McpModels.PropertySchema(
+                "string",
+                "API name to query. Use list_registered_apis to see available APIs."
+            ));
+        }
+
+        String description;
+        if (apiInstances.size() == 1) {
+            ApiInstance api = apiInstances.values().iterator().next();
+            description = String.format(
+                "List all API categories (tags) available in %s (v%s).\n" +
+                "Returns category names with endpoint counts.\n" +
+                "Use this first to explore the API structure.",
+                api.getApiTitle() != null ? api.getApiTitle() : "this API",
+                api.getApiVersion() != null ? api.getApiVersion() : "?"
+            );
+        } else {
+            description = "List all API categories (tags) for a specific API.\n" +
+                "Returns category names with endpoint counts.\n" +
+                "Specify 'api' parameter to choose which API to query.";
+        }
 
         return new McpModels.Tool(
             "list_api_categories",
             description,
-            new McpModels.InputSchema(Collections.emptyMap(), null)
+            new McpModels.InputSchema(properties, null)
         );
     }
 
     private McpModels.Tool createListEndpointsToolDef() {
         Map<String, McpModels.PropertySchema> properties = new LinkedHashMap<>();
+
+        if (apiInstances.size() > 1) {
+            properties.put("api", new McpModels.PropertySchema(
+                "string",
+                "API name to query. Use list_registered_apis to see available APIs."
+            ));
+        }
         properties.put("category", new McpModels.PropertySchema(
             "string",
             "Category (tag) name to list endpoints for. Use list_api_categories to get available categories."
@@ -130,6 +151,13 @@ public class SwaggerToolProvider implements ToolProvider {
 
     private McpModels.Tool createSearchApiToolDef() {
         Map<String, McpModels.PropertySchema> properties = new LinkedHashMap<>();
+
+        if (apiInstances.size() > 1) {
+            properties.put("api", new McpModels.PropertySchema(
+                "string",
+                "API name to search in. Use list_registered_apis to see available APIs."
+            ));
+        }
         properties.put("keyword", new McpModels.PropertySchema(
             "string",
             "Keyword to search for in API paths, operationIds, summaries, and descriptions"
@@ -150,6 +178,13 @@ public class SwaggerToolProvider implements ToolProvider {
 
     private McpModels.Tool createCallApiToolDef() {
         Map<String, McpModels.PropertySchema> properties = new LinkedHashMap<>();
+
+        if (apiInstances.size() > 1) {
+            properties.put("api", new McpModels.PropertySchema(
+                "string",
+                "API name to call. Use list_registered_apis to see available APIs."
+            ));
+        }
         properties.put("operationId", new McpModels.PropertySchema(
             "string",
             "The operationId of the API to call. Get this from list_api_endpoints or search_api."
@@ -172,8 +207,10 @@ public class SwaggerToolProvider implements ToolProvider {
     public McpModels.CallToolResult callTool(String name, JsonNode arguments) {
         try {
             switch (name) {
+                case "list_registered_apis":
+                    return handleListRegisteredApis();
                 case "list_api_categories":
-                    return handleListCategories();
+                    return handleListCategories(arguments);
                 case "list_api_endpoints":
                     return handleListEndpoints(arguments);
                 case "search_api":
@@ -190,21 +227,97 @@ public class SwaggerToolProvider implements ToolProvider {
     }
 
     /**
+     * API 인스턴스 가져오기
+     */
+    private ApiInstance getApiInstance(JsonNode arguments) {
+        if (apiInstances.size() == 1) {
+            return apiInstances.values().iterator().next();
+        }
+
+        String apiName = getStringParam(arguments, "api");
+        if (apiName == null || apiName.isEmpty()) {
+            return null; // 선택 필요
+        }
+
+        // 대소문자 무시 검색
+        for (Map.Entry<String, ApiInstance> entry : apiInstances.entrySet()) {
+            if (entry.getKey().equalsIgnoreCase(apiName)) {
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * API 선택 필요 메시지 생성
+     */
+    private McpModels.CallToolResult requireApiSelection() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("# API 선택 필요\n\n");
+        sb.append("등록된 API가 여러 개입니다. 'api' 파라미터로 지정해주세요:\n\n");
+        sb.append("| 이름 | URL | 엔드포인트 |\n");
+        sb.append("|------|-----|------------|\n");
+
+        for (ApiInstance api : apiInstances.values()) {
+            sb.append(String.format("| %s | %s | %d개 |\n",
+                api.getName(), api.getSpecUrl(), api.getEndpointCount()));
+        }
+
+        sb.append("\n예: \"로컬 API 카테고리 보여줘\" 또는 api 파라미터에 API 이름 지정");
+
+        return McpModels.CallToolResult.success(sb.toString());
+    }
+
+    /**
+     * 등록된 API 목록 반환
+     */
+    private McpModels.CallToolResult handleListRegisteredApis() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("# 등록된 API 목록\n\n");
+        sb.append(String.format("총 %d개의 API가 등록되어 있습니다.\n\n", apiInstances.size()));
+
+        sb.append("| 이름 | 제목 | 버전 | 카테고리 | 엔드포인트 |\n");
+        sb.append("|------|------|------|----------|------------|\n");
+
+        for (ApiInstance api : apiInstances.values()) {
+            sb.append(String.format("| %s | %s | %s | %d개 | %d개 |\n",
+                api.getName(),
+                api.getApiTitle() != null ? api.getApiTitle() : "-",
+                api.getApiVersion() != null ? api.getApiVersion() : "-",
+                api.getCategoryCount(),
+                api.getEndpointCount()
+            ));
+        }
+
+        sb.append("\n*사용법: \"[API이름] API 카테고리 보여줘\" 또는 api 파라미터 지정*");
+
+        return McpModels.CallToolResult.success(sb.toString());
+    }
+
+    /**
      * 카테고리(태그) 목록 반환
      */
-    private McpModels.CallToolResult handleListCategories() {
+    private McpModels.CallToolResult handleListCategories(JsonNode arguments) {
+        ApiInstance api = getApiInstance(arguments);
+        if (api == null && apiInstances.size() > 1) {
+            return requireApiSelection();
+        }
+        if (api == null) {
+            return McpModels.CallToolResult.error("등록된 API가 없습니다.");
+        }
+
         StringBuilder sb = new StringBuilder();
-        sb.append("# API Categories\n\n");
+        sb.append(String.format("# API Categories - %s\n\n", api.getName()));
         sb.append(String.format("**%s** (v%s)\n\n",
-            apiTitle != null ? apiTitle : "API",
-            apiVersion != null ? apiVersion : "?"));
+            api.getApiTitle() != null ? api.getApiTitle() : "API",
+            api.getApiVersion() != null ? api.getApiVersion() : "?"));
         sb.append(String.format("Total: %d categories, %d endpoints\n\n",
-            endpointsByTag.size(), endpoints.size()));
+            api.getCategoryCount(), api.getEndpointCount()));
 
         sb.append("| Category | Endpoints |\n");
         sb.append("|----------|----------|\n");
 
-        for (Map.Entry<String, List<ApiEndpoint>> entry : endpointsByTag.entrySet()) {
+        for (Map.Entry<String, List<ApiEndpoint>> entry : api.getEndpointsByTag().entrySet()) {
             sb.append(String.format("| %s | %d |\n", entry.getKey(), entry.getValue().size()));
         }
 
@@ -217,17 +330,25 @@ public class SwaggerToolProvider implements ToolProvider {
      * 특정 카테고리의 엔드포인트 목록 반환
      */
     private McpModels.CallToolResult handleListEndpoints(JsonNode arguments) {
+        ApiInstance api = getApiInstance(arguments);
+        if (api == null && apiInstances.size() > 1) {
+            return requireApiSelection();
+        }
+        if (api == null) {
+            return McpModels.CallToolResult.error("등록된 API가 없습니다.");
+        }
+
         String category = getStringParam(arguments, "category");
         if (category == null || category.isEmpty()) {
             return McpModels.CallToolResult.error("'category' parameter is required");
         }
 
-        List<ApiEndpoint> categoryEndpoints = endpointsByTag.get(category);
+        List<ApiEndpoint> categoryEndpoints = api.getEndpointsByTag().get(category);
         if (categoryEndpoints == null) {
             // 대소문자 무시하고 찾기
-            for (String key : endpointsByTag.keySet()) {
+            for (String key : api.getEndpointsByTag().keySet()) {
                 if (key.equalsIgnoreCase(category)) {
-                    categoryEndpoints = endpointsByTag.get(key);
+                    categoryEndpoints = api.getEndpointsByTag().get(key);
                     category = key;
                     break;
                 }
@@ -237,12 +358,12 @@ public class SwaggerToolProvider implements ToolProvider {
         if (categoryEndpoints == null) {
             return McpModels.CallToolResult.error(
                 "Category not found: " + category + "\nAvailable categories: " +
-                String.join(", ", endpointsByTag.keySet())
+                String.join(", ", api.getEndpointsByTag().keySet())
             );
         }
 
         StringBuilder sb = new StringBuilder();
-        sb.append(String.format("# Endpoints in '%s'\n\n", category));
+        sb.append(String.format("# Endpoints in '%s' (%s)\n\n", category, api.getName()));
         sb.append(String.format("Total: %d endpoints\n\n", categoryEndpoints.size()));
 
         for (ApiEndpoint ep : categoryEndpoints) {
@@ -284,6 +405,14 @@ public class SwaggerToolProvider implements ToolProvider {
      * API 검색
      */
     private McpModels.CallToolResult handleSearchApi(JsonNode arguments) {
+        ApiInstance api = getApiInstance(arguments);
+        if (api == null && apiInstances.size() > 1) {
+            return requireApiSelection();
+        }
+        if (api == null) {
+            return McpModels.CallToolResult.error("등록된 API가 없습니다.");
+        }
+
         String keyword = getStringParam(arguments, "keyword");
         if (keyword == null || keyword.isEmpty()) {
             return McpModels.CallToolResult.error("'keyword' parameter is required");
@@ -294,20 +423,20 @@ public class SwaggerToolProvider implements ToolProvider {
 
         String lowerKeyword = keyword.toLowerCase();
 
-        List<ApiEndpoint> matches = endpoints.stream()
+        List<ApiEndpoint> matches = api.getEndpoints().stream()
             .filter(ep -> matchesKeyword(ep, lowerKeyword))
             .limit(limit)
             .collect(Collectors.toList());
 
         if (matches.isEmpty()) {
             return McpModels.CallToolResult.success(
-                "No endpoints found matching '" + keyword + "'.\n" +
+                "No endpoints found matching '" + keyword + "' in " + api.getName() + ".\n" +
                 "Try different keywords or use list_api_categories to browse."
             );
         }
 
         StringBuilder sb = new StringBuilder();
-        sb.append(String.format("# Search Results for '%s'\n\n", keyword));
+        sb.append(String.format("# Search Results for '%s' in %s\n\n", keyword, api.getName()));
         sb.append(String.format("Found %d endpoints (showing max %d)\n\n", matches.size(), limit));
 
         for (ApiEndpoint ep : matches) {
@@ -374,20 +503,28 @@ public class SwaggerToolProvider implements ToolProvider {
      * API 호출
      */
     private McpModels.CallToolResult handleCallApi(JsonNode arguments) {
+        ApiInstance api = getApiInstance(arguments);
+        if (api == null && apiInstances.size() > 1) {
+            return requireApiSelection();
+        }
+        if (api == null) {
+            return McpModels.CallToolResult.error("등록된 API가 없습니다.");
+        }
+
         String operationId = getStringParam(arguments, "operationId");
         if (operationId == null || operationId.isEmpty()) {
             return McpModels.CallToolResult.error("'operationId' parameter is required");
         }
 
         // 엔드포인트 찾기
-        ApiEndpoint endpoint = endpoints.stream()
+        ApiEndpoint endpoint = api.getEndpoints().stream()
             .filter(e -> e.getOperationId().equals(operationId))
             .findFirst()
             .orElse(null);
 
         if (endpoint == null) {
             // 대소문자 무시하고 찾기
-            endpoint = endpoints.stream()
+            endpoint = api.getEndpoints().stream()
                 .filter(e -> e.getOperationId().equalsIgnoreCase(operationId))
                 .findFirst()
                 .orElse(null);
@@ -395,7 +532,7 @@ public class SwaggerToolProvider implements ToolProvider {
 
         if (endpoint == null) {
             return McpModels.CallToolResult.error(
-                "Endpoint not found: " + operationId + "\n" +
+                "Endpoint not found: " + operationId + " in " + api.getName() + "\n" +
                 "Use search_api or list_api_endpoints to find valid operationIds."
             );
         }
@@ -456,7 +593,7 @@ public class SwaggerToolProvider implements ToolProvider {
             }
 
             // API 호출
-            String response = httpClient.request(
+            String response = api.getHttpClient().request(
                 endpoint.getMethod(),
                 resolvedPath,
                 queryParams,
@@ -464,11 +601,11 @@ public class SwaggerToolProvider implements ToolProvider {
                 bodyParams.isEmpty() ? null : bodyParams
             );
 
-            logger.info("API 호출 성공: {} {}", endpoint.getMethod(), resolvedPath);
+            logger.info("API 호출 성공: {} {} {}", api.getName(), endpoint.getMethod(), resolvedPath);
             return McpModels.CallToolResult.success(response);
 
         } catch (Exception e) {
-            logger.error("API 호출 실패: {} {}", endpoint.getMethod(), endpoint.getPath(), e);
+            logger.error("API 호출 실패: {} {} {}", api.getName(), endpoint.getMethod(), endpoint.getPath(), e);
             return McpModels.CallToolResult.error("API call failed: " + e.getMessage());
         }
     }
