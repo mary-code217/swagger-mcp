@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  swagger-mcp:
+    build: .
+    image: swagger-mcp:latest
+    container_name: swagger-mcp
+    stdin_open: true
+    tty: true
+    environment:
+      - SWAGGER_URL=${SWAGGER_URL:-http://localhost:8080/v3/api-docs}
+      - BASE_URL=${BASE_URL:-}
