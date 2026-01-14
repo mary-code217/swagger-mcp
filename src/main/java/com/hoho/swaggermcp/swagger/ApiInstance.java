@@ -13,6 +13,7 @@ public class ApiInstance {
 
     private final String name;
     private final String specUrl;
+    private final String authHeader;  // Authorization 헤더 값 (예: "Bearer xxx" 또는 "Basic xxx")
     private final List<ApiEndpoint> endpoints = new ArrayList<>();
     private final Map<String, List<ApiEndpoint>> endpointsByTag = new LinkedHashMap<>();
     private HttpApiClient httpClient;
@@ -21,8 +22,13 @@ public class ApiInstance {
     private String apiVersion;
 
     public ApiInstance(String name, String specUrl) {
+        this(name, specUrl, null);
+    }
+
+    public ApiInstance(String name, String specUrl, String authHeader) {
         this.name = name;
         this.specUrl = specUrl;
+        this.authHeader = authHeader;
     }
 
     /**
@@ -80,6 +86,10 @@ public class ApiInstance {
 
     public HttpApiClient getHttpClient() {
         return httpClient;
+    }
+
+    public String getAuthHeader() {
+        return authHeader;
     }
 
     public int getEndpointCount() {

@@ -44,3 +44,10 @@ bin/
 
 ### MCP Config ###
 .mcp.json
+
+### Claude Code ###
+.claude/
+.claude*
+CLAUDE.md
+cwd
+nul

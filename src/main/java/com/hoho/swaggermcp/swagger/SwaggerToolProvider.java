@@ -28,10 +28,16 @@ public class SwaggerToolProvider implements ToolProvider {
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     private final Map<String, String> apiConfigs;
+    private final Map<String, String> authHeaders;
     private final Map<String, ApiInstance> apiInstances = new LinkedHashMap<>();
 
     public SwaggerToolProvider(Map<String, String> apiConfigs) {
+        this(apiConfigs, new LinkedHashMap<>());
+    }
+
+    public SwaggerToolProvider(Map<String, String> apiConfigs, Map<String, String> authHeaders) {
         this.apiConfigs = apiConfigs;
+        this.authHeaders = authHeaders != null ? authHeaders : new LinkedHashMap<>();
     }
 
     /**
@@ -43,10 +49,11 @@ public class SwaggerToolProvider implements ToolProvider {
         for (Map.Entry<String, String> entry : apiConfigs.entrySet()) {
             String name = entry.getKey();
             String url = entry.getValue();
+            String authHeader = authHeaders.get(name);
 
             try {
-                logger.info("API 초기화 중: {} ({})", name, url);
-                ApiInstance instance = new ApiInstance(name, url);
+                logger.info("API 초기화 중: {} ({}){}", name, url, authHeader != null ? " [인증 설정됨]" : "");
+                ApiInstance instance = new ApiInstance(name, url, authHeader);
                 instance.initialize();
                 apiInstances.put(name, instance);
                 logger.info("API 초기화 완료: {} - {}개 엔드포인트, {}개 카테고리",
@@ -191,14 +198,19 @@ public class SwaggerToolProvider implements ToolProvider {
         ));
         properties.put("parameters", new McpModels.PropertySchema(
             "object",
-            "Parameters for the API call as a JSON object. Include path, query, header, and body parameters as needed."
+            "Parameters for the API call as a JSON object. Include path, query, and body parameters as needed."
+        ));
+        properties.put("headers", new McpModels.PropertySchema(
+            "object",
+            "Custom HTTP headers to include in the request. Use this for Authorization tokens, e.g., {\"Authorization\": \"Bearer xxx\"}"
         ));
 
         return new McpModels.Tool(
             "call_api",
             "Call an API endpoint by its operationId.\n" +
             "First use list_api_endpoints or search_api to find the operationId and required parameters.\n" +
-            "Pass parameters as a JSON object with parameter names as keys.",
+            "Pass parameters as a JSON object with parameter names as keys.\n" +
+            "Use 'headers' parameter to pass custom headers like Authorization tokens.",
             new McpModels.InputSchema(properties, List.of("operationId"))
         );
     }
@@ -539,12 +551,25 @@ public class SwaggerToolProvider implements ToolProvider {
 
         try {
             JsonNode params = arguments != null ? arguments.get("parameters") : null;
+            JsonNode customHeaders = arguments != null ? arguments.get("headers") : null;
 
             // 파라미터 분류
             Map<String, String> pathParams = new HashMap<>();
             Map<String, String> queryParams = new HashMap<>();
             Map<String, String> headerParams = new HashMap<>();
             Map<String, Object> bodyParams = new LinkedHashMap<>();
+
+            // 커스텀 헤더 추가 (Claude가 직접 전달한 헤더)
+            if (customHeaders != null && customHeaders.isObject()) {
+                customHeaders.fields().forEachRemaining(field -> {
+                    String headerValue = field.getValue().isTextual()
+                        ? field.getValue().asText()
+                        : field.getValue().toString();
+                    headerParams.put(field.getKey(), headerValue);
+                    logger.debug("커스텀 헤더 추가: {} = {}", field.getKey(),
+                        field.getKey().equalsIgnoreCase("Authorization") ? "[MASKED]" : headerValue);
+                });
+            }
 
             for (ApiParameter param : endpoint.getParameters()) {
                 JsonNode value = params != null ? params.get(param.getName()) : null;
@@ -590,6 +615,15 @@ public class SwaggerToolProvider implements ToolProvider {
             String resolvedPath = endpoint.getPath();
             for (Map.Entry<String, String> entry : pathParams.entrySet()) {
                 resolvedPath = resolvedPath.replace("{" + entry.getKey() + "}", entry.getValue());
+            }
+
+            // Authorization 헤더 자동 주입 (설정된 경우)
+            if (api.getAuthHeader() != null && !api.getAuthHeader().isEmpty()) {
+                // 사용자가 명시적으로 Authorization 헤더를 지정하지 않은 경우에만 추가
+                if (!headerParams.containsKey("Authorization")) {
+                    headerParams.put("Authorization", api.getAuthHeader());
+                    logger.debug("Authorization 헤더 자동 주입: {}", api.getName());
+                }
             }
 
             // API 호출

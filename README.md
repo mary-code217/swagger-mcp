@@ -20,6 +20,12 @@ claude mcp add --scope user --transport stdio swagger-api -- docker run -i --rm 
 claude mcp add --scope user --transport stdio swagger-api -- docker run -i --rm ghcr.io/mary-code217/swagger-mcp:latest --api 로컬=http://host.docker.internal:8080/v3/api-docs --api 개발=http://dev-server/v3/api-docs
 ```
 
+### 인증이 필요한 API (Authorization 헤더)
+
+```bash
+claude mcp add --scope user --transport stdio swagger-api -- docker run -i --rm ghcr.io/mary-code217/swagger-mcp:latest --api myapi=http://host.docker.internal:8080/v3/api-docs --auth myapi="Bearer your-jwt-token"
+```
+
 ### 설정 후
 
 Claude Code를 재시작하면 바로 사용 가능!
@@ -67,6 +73,33 @@ Claude Code를 재시작하면 바로 사용 가능!
   }
 }
 ```
+
+### 인증이 필요한 API (Authorization 헤더)
+
+```json
+{
+  "mcpServers": {
+    "swagger-api": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "ghcr.io/mary-code217/swagger-mcp:latest",
+        "--api", "myapi=http://host.docker.internal:8080/v3/api-docs",
+        "--auth", "myapi=Bearer your-jwt-token"
+      ]
+    }
+  }
+}
+```
+
+#### 지원하는 인증 형식
+
+| 형식 | 예시 |
+|------|------|
+| Bearer Token | `--auth myapi="Bearer eyJhbGciOiJ..."` |
+| Basic Auth | `--auth myapi="Basic dXNlcjpwYXNz"` |
+| API Key | `--auth myapi="ApiKey your-api-key"` |
 
 > API 추가/수정/삭제는 설정 파일의 args를 수정 후 Claude Code 재시작
 
@@ -144,7 +177,32 @@ http://host.docker.internal:8080/v3/api-docs
 
 - API 서버가 실행 중인지 확인
 - 네트워크 접근이 가능한지 확인
-- 인증이 필요한 API인지 확인
+- 인증이 필요한 API라면 `--auth` 옵션으로 토큰 설정
+
+### Q: 인증 토큰을 설정하고 싶어요
+
+**방법 1: Claude한테 직접 토큰 전달 (권장)**
+
+설정 없이 Claude한테 토큰을 알려주면 됩니다:
+```
+"이 토큰으로 profile API 호출해줘: Bearer eyJhbGci..."
+```
+
+**방법 2: 설정 파일에 고정**
+
+`--auth API이름="Authorization헤더값"` 형식으로 설정:
+
+```json
+"args": [
+  "run", "-i", "--rm",
+  "ghcr.io/mary-code217/swagger-mcp:latest",
+  "--api", "myapi=http://host.docker.internal:8080/v3/api-docs",
+  "--auth", "myapi=Bearer your-jwt-token"
+]
+```
+
+환경변수로도 설정 가능 (단일 API용):
+- `SWAGGER_AUTH_HEADER`: Authorization 헤더 값 (예: `Bearer xxx`)
 
 ### Q: API를 추가하고 싶어요
 
