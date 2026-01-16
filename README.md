@@ -2,59 +2,19 @@
 
 Claude Code에서 Swagger API를 바로 사용할 수 있게 해주는 MCP 서버입니다.
 
-> **1000개 이상의 API도 문제없이!** 계층적 탐색과 검색으로 효율적으로 API를 사용할 수 있습니다.
-
 ---
 
 ## 빠른 시작
 
-### 단일 API 등록
+### 1. MCP 서버 등록
 
 ```bash
-claude mcp add --scope user --transport stdio swagger-api -- docker run -i --rm ghcr.io/mary-code217/swagger-mcp:latest http://host.docker.internal:8080/v3/api-docs
+claude mcp add --scope user --transport stdio swagger-api -- docker run -i --rm ghcr.io/mary-code217/swagger-mcp:latest
 ```
 
-### 멀티 API 등록
+### 2. 설정 파일에서 API 추가 (권장)
 
-```bash
-claude mcp add --scope user --transport stdio swagger-api -- docker run -i --rm ghcr.io/mary-code217/swagger-mcp:latest --api 로컬=http://host.docker.internal:8080/v3/api-docs --api 개발=http://dev-server/v3/api-docs
-```
-
-### 인증이 필요한 API (Authorization 헤더)
-
-```bash
-claude mcp add --scope user --transport stdio swagger-api -- docker run -i --rm ghcr.io/mary-code217/swagger-mcp:latest --api myapi=http://host.docker.internal:8080/v3/api-docs --auth myapi="Bearer your-jwt-token"
-```
-
-### 설정 후
-
-Claude Code를 재시작하면 바로 사용 가능!
-
----
-
-## 설정 파일로 등록
-
-`C:\Users\{사용자명}\.claude.json` 파일의 `mcpServers`에 추가:
-
-### 단일 API
-
-```json
-{
-  "mcpServers": {
-    "swagger-api": {
-      "type": "stdio",
-      "command": "docker",
-      "args": [
-        "run", "-i", "--rm",
-        "ghcr.io/mary-code217/swagger-mcp:latest",
-        "http://host.docker.internal:8080/v3/api-docs"
-      ]
-    }
-  }
-}
-```
-
-### 멀티 API
+`C:\Users\{사용자명}\.claude.json` 파일을 직접 수정하는 것이 가장 편리합니다:
 
 ```json
 {
@@ -66,15 +26,26 @@ Claude Code를 재시작하면 바로 사용 가능!
         "run", "-i", "--rm",
         "ghcr.io/mary-code217/swagger-mcp:latest",
         "--api", "로컬=http://host.docker.internal:8080/v3/api-docs",
-        "--api", "개발=http://dev-server/v3/api-docs",
-        "--api", "운영=http://prod-server/v3/api-docs"
+        "--api", "개발=http://dev-server/v3/api-docs"
       ]
     }
   }
 }
 ```
 
-### 인증이 필요한 API (Authorization 헤더)
+> **💡 Tip:** API 추가/삭제, 토큰 설정 등 모든 설정 변경은 `.claude.json` 파일을 직접 수정하는 것이 가장 빠르고 편합니다.
+
+### 3. Claude Code 재시작
+
+설정 저장 후 Claude Code를 재시작하면 바로 사용 가능!
+
+---
+
+## 인증 설정 (Authorization 헤더)
+
+### 방법 1: 설정 파일에 토큰 저장 (권장)
+
+`.claude.json`의 args에 `--auth` 옵션 추가:
 
 ```json
 {
@@ -93,15 +64,22 @@ Claude Code를 재시작하면 바로 사용 가능!
 }
 ```
 
-#### 지원하는 인증 형식
+> **💡 Tip:** 토큰이 만료되면 `.claude.json` 파일의 `--auth` 값만 수정하고 Claude Code 재시작
+
+### 방법 2: Claude에게 직접 토큰 전달
+
+설정 없이 대화 중에 토큰을 전달할 수도 있습니다:
+```
+"이 토큰으로 profile API 호출해줘: Bearer eyJhbGci..."
+```
+
+### 지원하는 인증 형식
 
 | 형식 | 예시 |
 |------|------|
 | Bearer Token | `--auth myapi="Bearer eyJhbGciOiJ..."` |
 | Basic Auth | `--auth myapi="Basic dXNlcjpwYXNz"` |
 | API Key | `--auth myapi="ApiKey your-api-key"` |
-
-> API 추가/수정/삭제는 설정 파일의 args를 수정 후 Claude Code 재시작
 
 ---
 
@@ -177,43 +155,18 @@ http://host.docker.internal:8080/v3/api-docs
 
 - API 서버가 실행 중인지 확인
 - 네트워크 접근이 가능한지 확인
-- 인증이 필요한 API라면 `--auth` 옵션으로 토큰 설정
+- 인증이 필요한 API라면 위의 [인증 설정](#인증-설정-authorization-헤더) 참고
 
-### Q: 인증 토큰을 설정하고 싶어요
+### Q: API를 추가/수정하고 싶어요
 
-**방법 1: Claude한테 직접 토큰 전달 (권장)**
-
-설정 없이 Claude한테 토큰을 알려주면 됩니다:
-```
-"이 토큰으로 profile API 호출해줘: Bearer eyJhbGci..."
-```
-
-**방법 2: 설정 파일에 고정**
-
-`--auth API이름="Authorization헤더값"` 형식으로 설정:
-
-```json
-"args": [
-  "run", "-i", "--rm",
-  "ghcr.io/mary-code217/swagger-mcp:latest",
-  "--api", "myapi=http://host.docker.internal:8080/v3/api-docs",
-  "--auth", "myapi=Bearer your-jwt-token"
-]
-```
-
-환경변수로도 설정 가능 (단일 API용):
-- `SWAGGER_AUTH_HEADER`: Authorization 헤더 값 (예: `Bearer xxx`)
-
-### Q: API를 추가하고 싶어요
-
-`.claude.json` 파일의 args에 `--api` 추가 후 Claude Code 재시작:
+`.claude.json` 파일의 args를 직접 수정 후 Claude Code 재시작:
 
 ```json
 "args": [
   "run", "-i", "--rm",
   "ghcr.io/mary-code217/swagger-mcp:latest",
   "--api", "로컬=http://host.docker.internal:8080/v3/api-docs",
-  "--api", "신규=http://new-server/v3/api-docs"  // 추가
+  "--api", "신규=http://new-server/v3/api-docs"
 ]
 ```
 
